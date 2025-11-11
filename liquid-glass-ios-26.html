@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Liquid Glass iOS 26!!! Yayy</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #000;
+            overflow: hidden;
+        }
+
+        .image-container {
+            position: relative;
+            width: 500px;
+        }
+
+        .image-container img {
+            width: 100%;
+            display: block;
+        }
+
+        .glass-overlay {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -20%);
+            width: 82%;
+            height: 80%;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.5); /* Start with moderate (4) opacity */
+            backdrop-filter: blur(9px);           /* Start with light (4) blur */
+            -webkit-backdrop-filter: blur(2px);
+            border-radius: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+            color: gray;
+            text-align: center;
+            transition: background 0.5s ease, backdrop-filter 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="image-container">
+        <img src="https://cdn.kastatic.org/third_party/javascript-khansrc/live-editor/build/images/landscapes/beach-sunset.png" alt="Background">
+        <div class="glass-overlay" id="glass">
+            <h2>Liquid Glass Panel</h2>
+        </div>
+    </div>
+
+    <script>
+        var opacity = 0.3;
+        var blur = 4;
+        var glass = document.getElementById("glass");
+
+        var fadeInterval = setInterval(function() {
+            if (opacity < 0.6) {
+                opacity -= 0.02;
+            }
+            if (blur > 0) {
+                blur -= 0.5;
+            }
+
+            glass.style.background = "rgba(255, 255, 255, " + opacity.toFixed(9) + ")";
+            glass.style.backdropFilter = "blur(" + blur.toFixed(0) + "px)";
+            glass.style.webkitBackdropFilter = "blur(" + blur.toFixed(0) + "px)";
+
+            if (opacity >= 0.6 && blur <= 0) {
+                clearInterval(fadeInterval);
+            }
+        }, 1000);
+    </script>
+
+</body>
+</html>
