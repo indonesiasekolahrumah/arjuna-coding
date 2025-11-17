@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>TANK DESTROYER V </title>
+    <style>
+      /* Basic reset and canvas styles */
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        background-color: rgb(83, 189, 118);
+      }
+      /* HUD styling */
+      .hud {
+        position: fixed;
+        top: 1px;
+        left: 5px;
+        font-family: Arial, sans-serif;
+        color: red;
+      }
+      .hud > div {
+        margin-bottom: 5px;
+      }
+      .kill-count {
+        font-size: 24px;
+      }
+      .health-bar, .armor-bar {
+        transition: width 0.1s ease-in-out;
+        height: 20px;
+        width: 100%;
+      }
+      .health-bar {
+        background-color: rgb(219, 35, 44);
+      }
+      .armor-bar {
+        background-color: cyan;
+      }
+      /* Controls container */
+      .controls {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        display: flex;
+        gap: 30px;
+      }
+      /* Movement controls in WASD grid */
+      .move-controls {
+        display: grid;
+        grid-template-areas:
+          ". w ."
+          "a s d"
+          ". . .";
+        grid-template-columns: 60px 60px 60px 60px 60px;
+        grid-template-rows: 60px 60px;
+        gap: 10px;
+      }
+      .move-controls button {
+        width: 70px;
+        height: 70px;
+        background-color: rgb(62, 173, 99);
+        border: none;
+        border-radius: 115px;
+        font-size: 39px;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+      #wButton {
+        grid-area: w;
+      }
+      #aButton {
+        grid-area: a;
+      }
+      #sButton {
+        grid-area: s;
+      }
+      #dButton {
+        grid-area: d;
+      }
+      /* Shoot button styling */
+      .shoot-controls button {
+        width: 70px;
+        height: 70px;
+        background-color: rgb(240, 17, 9);
+        border: none;
+        border-radius: 115px;
+        font-size: 38px;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="hud">
+      <div class="kill-count" id="killCount">Kills: 0</div>
+      <div class="health-bar" id="healthBar"></div>
+      <div class="armor-bar" id="armorBar"></div>
+    </div>
+    <div class="controls">
+      <div class="move-controls">
+        <button id="wButton">🔼</button>
+        <button id="aButton">◀️</button>
+        <button id="sButton">🔽</button>
+        <button id="dButton">▶️</button>
+      </div>
+      <div class="shoot-controls">
+        <button id="shootButton">☄️️</button>
+      </div>
+    </div>
+    <script>
+      // Set up canvas and context
+      var canvas = document.getElementById('gameCanvas');
+      var context = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      
+      // Game variables
+      var tank = {
+        x: canvas.width / 2 - 25,
+        y: canvas.height - 60,
+        width: 50,
+        height: 50,
+        color: 'green',
+        health: 350,
+        armor: 125
+      };
+      var killCount = 0;
+      var bullets = [];
+      var enemies = [];
+      var enemyBullets = [];
+      var maxEnemies = 4;
+      
+      // Reload (cooldown) configuration for player's shooting
+      var reloadTime = 766; // milliseconds
+      var lastShotTime = 0;
+      var shootingInterval = null;
+      
+      // Draw player's tank
+      function drawTank() {
+        context.fillStyle = tank.color;
+        context.fillRect(tank.x, tank.y, tank.width, tank.height);
+      }
+      
+      // Draw and update player's bullets
+      function drawBullets() {
+        var i, bullet;
+        for (i = 0; i < bullets.length; i++) {
+          bullet = bullets[i];
+          bullet.y -= bullet.speed;
+          context.fillStyle = 'black';
+          context.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+          if (bullet.y + bullet.height < 0) {
+            bullets.splice(i, 1);
+            i--;
+          }
+        }
+      }
+      
+      // Draw enemies and their health bars
+      function drawEnemies() {
+        var i, enemy;
+        for (i = 0; i < enemies.length; i++) {
+          enemy = enemies[i];
+          enemy.y += enemy.speedY;
+          enemy.x += enemy.speedX;
+      
+          // Reverse direction if enemy hits canvas edges
+          if (enemy.x < 0 || enemy.x + enemy.width > canvas.width) {
+            enemy.speedX *= -1;
+          }
+          if (enemy.y < 0 || enemy.y + enemy.height > canvas.height) {
+            enemy.speedY *= -1;
+          }
+      
+          context.fillStyle = 'red';
+          context.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      
+          // Draw enemy health bar above enemy
+          context.fillStyle = 'black';
+          context.fillRect(enemy.x, enemy.y - 10, enemy.width, 5);
+          context.fillStyle = 'red';
+          context.fillRect(enemy.x, enemy.y - 10, enemy.width * (enemy.health / 250), 5);
+        }
+      }
+      
+      // Draw enemy bullets and check collision with the tank
+      function drawEnemyBullets() {
+        var i, bullet;
+        for (i = 0; i < enemyBullets.length; i++) {
+          bullet = enemyBullets[i];
+          bullet.y += bullet.speedY;
+          bullet.x += bullet.speedX;
+          context.fillStyle = 'red';
+          context.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+      
+          // Check collision with player's tank
+          if (
+            bullet.x < tank.x + tank.width &&
+            bullet.x + bullet.width > tank.x &&
+            bullet.y < tank.y + tank.height &&
+            bullet.y + bullet.height > tank.y
+          ) {
+            enemyBullets.splice(i, 1);
+            i--;
+            if (tank.armor > 0) {
+              tank.armor -= 3;
+            } else {
+              tank.health -= 3;
+            }
+            continue;
+          }
+      document.getElementById('shootButton').addEventListener('touchstart', function() {
+        var bulletSpeed = 10;
+        var bulletStartX = tank.x + tank.width / 2 - 5;
+        var bulletStartY = tank.y;
+        var dx = 0;
+        var dy = -bulletSpeed;
+
+        if (enemies.length > 0) {
+          // Find the nearest enemy using Euclidean distance from the bullet spawn point.
+          var nearestEnemy = null;
+          var minDist = Infinity;
+          var bulletOrigin = { x: bulletStartX, y: bulletStartY };
+          enemies.forEach(function(enemy) {
+            var enemyCenter = {
+              x: enemy.x + enemy.width / 2,
+              y: enemy.y + enemy.height / 2
+            };
+            var dist = Math.hypot(enemyCenter.x - bulletOrigin.x, enemyCenter.y - bulletOrigin.y);
+            if (dist < minDist) {
+              minDist = dist;
+              nearestEnemy = enemy;
+            }
+          });
+          if (nearestEnemy) {
+            var enemyCenter = {
+              x: nearestEnemy.x + nearestEnemy.width / 2,
+              y: nearestEnemy.y + nearestEnemy.height / 2
+            };
+            var diffX = enemyCenter.x - bulletOrigin.x;
+            var diffY = enemyCenter.y - bulletOrigin.y;
+            var dist = Math.hypot(diffX, diffY);
+            dx = (diffX / dist) * bulletSpeed;
+            dy = (diffY / dist) * bulletSpeed;
+          }
+        }
+
+        bullets.push({
+          x: bulletStartX,
+          y: bulletStartY,
+          width: 10,
+          height: 20,
+          dx: dx,
+          dy: dy
+        });
+      });
+          
+          // Remove bullet if it goes offscreen
+          if (
+            bullet.x + bullet.width < 0 ||
+            bullet.x > canvas.width ||
+            bullet.y + bullet.height < 0 ||
+            bullet.y > canvas.height
+          ) {
+            enemyBullets.splice(i, 1);
+            i--;
+          }
+        }
+      }
+      
+      // Check collisions: player's bullets with enemies
+      function checkCollisions() {
+        var i, j, bullet, enemy;
+        for (i = 0; i < bullets.length; i++) {
+          bullet = bullets[i];
+          for (j = 0; j < enemies.length; j++) {
+            enemy = enemies[j];
+            if (
+              bullet.x < enemy.x + enemy.width &&
+              bullet.x + bullet.width > enemy.x &&
+              bullet.y < enemy.y + enemy.height &&
+              bullet.y + bullet.height > enemy.y
+            ) {
+              bullets.splice(i, 1);
+              i--;
+              enemy.health -= 45;
+              if (enemy.health <= 0) {
+                enemies.splice(j, 1);
+                j--;
+                killCount++;
+                document.getElementById('killCount').innerText = 'Kills: ' + killCount;
+              }
+              break;
+            }
+          }
+        }
+      }
+      
+      // Update the HUD (health, armor, and kill count)
+      function updateHUD() {
+        document.getElementById('healthBar').style.width = tank.health + '%';
+        document.getElementById('armorBar').style.width = tank.armor + '%';
+        document.getElementById('killCount').innerText = 'Kills: ' + killCount;
+      }
+      
+      // Enemy shooting logic (called each frame)
+      function enemyShoot() {
+        var i, now, enemy;
+        now = Date.now();
+        for (i = 0; i < enemies.length; i++) {
+          enemy = enemies[i];
+          if (now - enemy.lastShootTime >= enemy.shootInterval) {
+            enemy.lastShootTime = now;
+            enemyBullets.push({
+              x: enemy.x + enemy.width / 2 - 5,
+              y: enemy.y + enemy.height,
+              width: 5,
+              height: 10,
+              speedX: (tank.x - enemy.x) / 50,
+              speedY: (tank.y - enemy.y) / 50
+            });
+          }
+        }
+      }
+      
+      // The main game loop
+      function gameLoop() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        if (tank.health > 0) {
+          drawTank();
+          drawBullets();
+          drawEnemies();
+          drawEnemyBullets();
+          enemyShoot();  // Check if any enemy should shoot
+          checkCollisions();
+          updateHUD();
+        } else {
+          context.fillStyle = 'red';
+          context.font = '50px Arial';
+          context.fillText('Game Over', canvas.width / 2 - 100, canvas.height / 2);
+          return;
+        }
+        window.requestAnimationFrame(gameLoop);
+      }
+      
+      // Spawn a new enemy with reduced speeds and shooting properties
+      function spawnEnemy() {
+        if (enemies.length < maxEnemies) {
+          var size = 50;
+          var x = Math.random() * (canvas.width - size);
+          var y = Math.random() * (canvas.height - size);
+          enemies.push({
+            x: x,
+            y: y,
+            width: size,
+            height: size,
+            health: 250,
+            speedX: Math.random() * 1 - 0.5, // slower speed
+            speedY: Math.random() * 1 - 0.5, // slower speed
+            lastShootTime: Date.now(),
+            shootInterval: 6000
+          });
+        }
+      }
+      
+      // Function to shoot a bullet from the player's tank
+      function shootBullet() {
+        // Adjust bullet spawn to be just above the tank
+        bullets.push({
+          x: tank.x + tank.width / 2 - 5,
+          y: tank.y - 20, // spawn bullet above the tank
+          width: 10,
+          height: 20,
+          speed: 10
+        });
+        // Change shoot button color to greyish to indicate reload
+        var shootButton = document.getElementById('shootButton');
+        shootButton.style.backgroundColor = 'grey';
+        setTimeout(function() {
+          shootButton.style.backgroundColor = 'rgb(240, 17, 9)';
+        }, reloadTime);
+      }
+      
+      // Start continuous shooting (for button hold)
+      function startShooting() {
+        var now = Date.now();
+        if (now - lastShotTime >= reloadTime) {
+          lastShotTime = now;
+          shootBullet();
+        }
+        shootingInterval = setInterval(function() {
+          var now = Date.now();
+          if (now - lastShotTime >= reloadTime) {
+            lastShotTime = now;
+            shootBullet();
+          }
+        }, reloadTime);
+      }
+      
+      // Stop continuous shooting
+      function stopShooting() {
+        if (shootingInterval !== null) {
+          clearInterval(shootingInterval);
+          shootingInterval = null;
+        }
+      }
+      
+      // Event listeners for continuous shooting on shoot button hold
+      var shootButton = document.getElementById('shootButton');
+      shootButton.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        startShooting();
+      });
+      shootButton.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        stopShooting();
+      });
+      shootButton.addEventListener('touchcancel', function(e) {
+        e.preventDefault();
+        stopShooting();
+      });
+      
+      // Movement button event listeners (for single taps)
+      document.getElementById('wButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (tank.y > 0) {
+          tank.y -= 25;
+        }
+      });
+      document.getElementById('aButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (tank.x > 0) {
+          tank.x -= 25;
+        }
+      });
+      document.getElementById('sButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (tank.y + tank.height < canvas.height) {
+          tank.y += 25;
+        }
+      });
+      document.getElementById('dButton').addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        if (tank.x + tank.width < canvas.width) {
+          tank.x += 25;
+        }
+      });
+      
+      // (Draggable event listeners removed to keep buttons fixed)
+      
+      // Spawn new enemies periodically and start the game loop
+      setInterval(function() {
+        spawnEnemy();
+      }, 4000);
+      gameLoop();
+    </script>
+  </body>
+</html>
