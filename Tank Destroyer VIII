@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>TANK DESTROYER VIII</title>
+    <style>
+      /* Basic reset and canvas styles */
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        background-color: rgb(83, 189, 118);
+      }
+
+      /* HUD styling */
+      .hud {
+        position: fixed;
+        top: 1px;
+        left: 5px;
+        font-family: Arial, sans-serif;
+        color: blue;
+      }
+      .hud > div {
+        margin-bottom: 5px;
+      }
+      .kill-count {
+        font-size: 24px;
+      }
+      .health-bar, .armor-bar {
+        transition: width 0.1s ease-in-out;
+        height: 20px;
+        width: 100%;
+      }
+      .health-bar {
+        background-color: rgb(219, 35, 44);
+      }
+      .armor-bar {
+        background-color: cyan;
+      }
+
+      /* Controls container */
+      .controls {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        display: flex;
+        gap: 30px;
+      }
+      /* Movement controls in WASD grid */
+      .move-controls {
+        display: grid;
+        grid-template-areas:
+          ". w ."
+          "a s d";
+        grid-template-columns: 60px 60px 60px 60px 60px;
+        grid-template-rows: 60px 60px;
+        gap: 10px;
+      }
+      .move-controls button {
+        width: 70px;
+        height: 70px;
+        background-color: rgb(62, 173, 99);
+        border: none;
+        border-radius: 115px;
+        font-size: 39px;
+      }
+      #wButton {
+        grid-area: w;
+      }
+      #aButton {
+        grid-area: a;
+      }
+      #sButton {
+        grid-area: s;
+      }
+      #dButton {
+        grid-area: d;
+      }
+      /* Shoot button styling */
+      .shoot-controls button {
+        width: 70px;
+        height: 70px;
+        background-color: rgb(240, 17, 9);
+        border: none;
+        border-radius: 115px;
+        font-size: 38px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="hud">
+      <div class="kill-count" id="killCount">Kills: 0</div>
+      <div class="health-bar" id="healthBar"></div>
+      <div class="armor-bar" id="armorBar"></div>
+    </div>
+    <div class="controls">
+      <div class="move-controls">
+        <button id="wButton">🔼</button>
+        <button id="aButton">◀️</button>
+        <button id="sButton">🔽</button>
+        <button id="dButton">▶️</button>
+      </div>
+      <div class="shoot-controls">
+        <button id="shootButton">☢️</button>
+      </div>
+    </div>
+    <script>
+      // Set up canvas and context
+      var canvas = document.getElementById('gameCanvas');
+      var context = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      // Game variables
+      var tank = {
+        x: canvas.width / 2 - 25,
+        y: canvas.height - 60,
+        width: 50,
+        height: 50,
+        color: 'green',
+        health: 350,
+        armor: 125
+      };
+      var killCount = 0;
+      var bullets = [];
+      var enemies = [];
+      var enemyBullets = [];
+      var boulders = [];  // Array for boulder obstacles
+      var maxEnemies = 4;
+
+      // Add some boulders (obstacles) at fixed positions with health
+      boulders.push({ x: canvas.width / 4 - 35, y: canvas.height / 2 - 35, width: 70, height: 70, health: 3000 });
+      boulders.push({ x: canvas.width / 2 - 3, y: canvas.height / 3 - 35, width: 60, height: 40, health: 3000 });
+      boulders.push({ x: (1.7 * canvas.width) / 4 - 1, y: canvas.height / 2 - 35, width: 70, height: 70, health: 3000 });
+      boulders.push({ x: (3 * canvas.width) / 10 - 1, y: canvas.height / 9 - 37, width: 50, height: 90, health: 3000 });
+
+      // Draw the player's tank
+      function drawTank() {
+        context.fillStyle = tank.color;
+        context.fillRect(tank.x, tank.y, tank.width, tank.height);
+      }
+
+      // Draw and update player's bullets with directional movement
+      function drawBullets() {
+        bullets.forEach(function(bullet, index) {
+          bullet.x += bullet.dx;
+          bullet.y += bullet.dy;
+          context.fillStyle = 'black';
+          context.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+          // Remove bullet if it goes offscreen
+          if (
+            bullet.x + bullet.width < 0 ||
+            bullet.x > canvas.width ||
+            bullet.y + bullet.height < 0 ||
+            bullet.y > canvas.height
+          ) {
+            bullets.splice(index, 1);
+          }
+        });
+      }
+
+      // Draw enemy bullets
+      function drawEnemyBullets() {
+        enemyBullets.forEach(function(bullet, index) {
+          bullet.x += bullet.speedX;
+          bullet.y += bullet.speedY;
+          context.fillStyle = 'red';
+          context.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+
+          // Check collision with the tank
+          if (
+            bullet.x < tank.x + tank.width &&
+            bullet.x + bullet.width > tank.x &&
+            bullet.y < tank.y + tank.height &&
+            bullet.y + bullet.height > tank.y
+          ) {
+            enemyBullets.splice(index, 1);
+            if (tank.armor > 0) {
+              tank.armor -= 3;
+            } else {
+              tank.health -= 3;
+            }
+          }
+
+          // Remove bullet if it goes offscreen
+          if (
+            bullet.x + bullet.width < 0 ||
+            bullet.x > canvas.width ||
+            bullet.y + bullet.height < 0 ||
+            bullet.y > canvas.height
+          ) {
+            enemyBullets.splice(index, 1);
+          }
+        });
+      }
+
+      // Draw and update enemies
+      function drawEnemies() {
+        enemies.forEach(function(enemy) {
+          enemy.x += enemy.speedX;
+          enemy.y += enemy.speedY;
+
+          if (enemy.x < 0 || enemy.x + enemy.width > canvas.width) {
+            enemy.speedX *= -1;
+          }
+          if (enemy.y < 0 || enemy.y + enemy.height > canvas.height) {
+            enemy.speedY *= -1;
+          }
+
+          context.fillStyle = 'red';
+          context.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+
+          // Draw enemy health bar above the enemy
+          context.fillStyle = 'black';
+          context.fillRect(enemy.x, enemy.y - 10, enemy.width, 5);
+          context.fillStyle = 'red';
+          context.fillRect(enemy.x, enemy.y - 10, enemy.width * (enemy.health / 250), 5);
+        });
+      }
+
+      // Draw boulders (obstacles) and remove any with zero or less health
+      function drawBoulders() {
+        boulders.forEach(function(boulder, index) {
+          if (boulder.health <= 0) {
+            boulders.splice(index, 1);
+          } else {
+            context.fillStyle = 'grey';
+            context.fillRect(boulder.x, boulder.y, boulder.width, boulder.height);
+          }
+        });
+      }
+
+      // Spawn a new enemy (with its own shooting interval)
+      function spawnEnemy() {
+        if (enemies.length < maxEnemies) {
+          var size = 50;
+          var x = Math.random() * (canvas.width - size);
+          var y = Math.random() * (canvas.height - size);
+          enemies.push({
+            x: x,
+            y: y,
+            width: size,
+            height: size,
+            health: 250,
+            speedX: Math.random() * 2 - 1,
+            speedY: Math.random() * 2 - 1
+          });
+
+          // Enemy shoots every 6 seconds using its current position
+          setInterval(function () {
+            if (enemies.length > 0) {
+              var lastEnemy = enemies[enemies.length - 1];
+              enemyBullets.push({
+                x: lastEnemy.x + lastEnemy.width / 2 - 5,
+                y: lastEnemy.y + lastEnemy.height,
+                width: 5,
+                height: 10,
+                speedX: (tank.x - lastEnemy.x) / 50,
+                speedY: (tank.y - lastEnemy.y) / 50
+              });
+            }
+          }, 3000);
+        }
+      }
+
+      // Check collisions between various game elements
+      function checkCollisions() {
+        // Player bullet collisions with enemies
+        bullets.forEach(function(bullet, bulletIndex) {
+          enemies.forEach(function(enemy, enemyIndex) {
+            if (
+              bullet.x < enemy.x + enemy.width &&
+              bullet.x + bullet.width > enemy.x &&
+              bullet.y < enemy.y + enemy.height &&
+              bullet.y + bullet.height > enemy.y
+            ) {
+              bullets.splice(bulletIndex, 1);
+              enemy.health -= 45;
+              if (enemy.health <= 0) {
+                enemies.splice(enemyIndex, 1);
+                killCount++;
+                document.getElementById('killCount').innerText = 'Kills: ' + killCount;
+              }
+            }
+          });
+        });
+
+        // Player bullets collision with boulders
+        bullets.forEach(function(bullet, bulletIndex) {
+          for (var i = 0; i < boulders.length; i++) {
+            var boulder = boulders[i];
+            if (
+              bullet.x < boulder.x + boulder.width &&
+              bullet.x + bullet.width > boulder.x &&
+              bullet.y < boulder.y + boulder.height &&
+              bullet.y + bullet.height > boulder.y
+            ) {
+              boulder.health -= 45; // Damage to the boulder
+              bullets.splice(bulletIndex, 1);
+              break;
+            }
+          }
+        });
+        
+        // Enemy bullets collision with boulders
+        enemyBullets.forEach(function(bullet, bulletIndex) {
+          for (var j = 0; j < boulders.length; j++) {
+            var boulder = boulders[j];
+            if (
+              bullet.x < boulder.x + boulder.width &&
+              bullet.x + bullet.width > boulder.x &&
+              bullet.y < boulder.y + boulder.height &&
+              bullet.y + bullet.height > boulder.y
+            ) {
+              boulder.health -= 3; // Less damage from enemy bullets
+              enemyBullets.splice(bulletIndex, 1);
+              break;
+            }
+          }
+        });
+      }
+
+      // Update the HUD with current tank stats and kill count
+      function updateHUD() {
+        document.getElementById('healthBar').style.width = tank.health + '%';
+        document.getElementById('armorBar').style.width = tank.armor + '%';
+        document.getElementById('killCount').innerText = 'Kills: ' + killCount;
+      }
+
+      // The main game loop
+      function gameLoop() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        if (tank.health > 0) {
+          drawTank();
+          drawBoulders();
+          drawBullets();
+          drawEnemies();
+          drawEnemyBullets();
+          checkCollisions();
+          updateHUD();
+        } else {
+          context.fillStyle = 'red';
+          context.font = '50px Arial';
+          context.fillText('Game Over', canvas.width / 2 - 100, canvas.height / 2);
+          return;
+        }
+        requestAnimationFrame(gameLoop);
+      }
+
+      // Movement event listeners using WASD buttons (via touch)
+      document.getElementById('wButton').addEventListener('touchstart', function () {
+        if (tank.y > 0) {
+          tank.y -= 25;
+        }
+      });
+      document.getElementById('aButton').addEventListener('touchstart', function () {
+        if (tank.x > 0) {
+          tank.x -= 25;
+        }
+      });
+      document.getElementById('sButton').addEventListener('touchstart', function () {
+        if (tank.y + tank.height < canvas.height) {
+          tank.y += 25;
+        }
+      });
+      document.getElementById('dButton').addEventListener('touchstart', function () {
+        if (tank.x + tank.width < canvas.width) {
+          tank.x += 25;
+        }
+      });
+      
+      // Shoot button event listener with targeting logic (using traditional functions)
+      document.getElementById('shootButton').addEventListener('touchstart', function () {
+        // Bullet starting position: center-top of the tank
+        var bulletStartX = tank.x + tank.width / 2 - 5;
+        var bulletStartY = tank.y;
+        var bulletSpeed = 10;
+
+        // Default bullet direction (upward)
+        var targetDx = 0;
+        var targetDy = -bulletSpeed;
+
+        // Identify the nearest enemy if one is present
+        var nearestEnemy = null;
+        var minDistance = Infinity;
+        if (enemies.length > 0) {
+          enemies.forEach(function(enemy) {
+            var enemyCenterX = enemy.x + enemy.width / 2;
+            var enemyCenterY = enemy.y + enemy.height / 2;
+            var dx = enemyCenterX - bulletStartX;
+            var dy = enemyCenterY - bulletStartY;
+            var distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestEnemy = enemy;
+            }
+          });
+        }
+
+        // If an enemy target is found, compute the normalized direction
+        if (nearestEnemy) {
+          var enemyCenterX = nearestEnemy.x + nearestEnemy.width / 2;
+          var enemyCenterY = nearestEnemy.y + nearestEnemy.height / 2;
+          var vectorX = enemyCenterX - bulletStartX;
+          var vectorY = enemyCenterY - bulletStartY;
+          var length = Math.sqrt(vectorX * vectorX + vectorY * vectorY);
+          targetDx = bulletSpeed * (vectorX / length);
+          targetDy = bulletSpeed * (vectorY / length);
+        }
+
+        // Add the new bullet with its directional velocity
+        bullets.push({
+          x: bulletStartX,
+          y: bulletStartY,
+          width: 10,
+          height: 20,
+          dx: targetDx,
+          dy: targetDy
+        });
+      });
+
+      // Set up enemy spawning and start the game loop
+      setInterval(function () {
+        spawnEnemy();
+      }, 4000);
+      gameLoop();
+    </script>
+  </body>
+</html>
